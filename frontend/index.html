@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SmartPark İzmir</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;height:100vh;display:flex;background:#0d0d1a;color:#e0e0e0}
+  #sidebar{width:340px;min-width:340px;display:flex;flex-direction:column;background:#12122a;border-right:1px solid #1e1e4a;overflow-y:auto}
+  #sidebar h1{padding:18px 20px;font-size:1.15rem;font-weight:700;background:#0d0d1a;border-bottom:1px solid #1e1e4a;color:#fff;letter-spacing:.3px}
+  #sidebar h1 span{color:#e94560}
+  .panel{padding:14px 16px;border-bottom:1px solid #1e1e4a}
+  label{font-size:.72rem;text-transform:uppercase;color:#666;display:block;margin-bottom:5px;letter-spacing:.5px}
+  .row{display:flex;gap:6px;margin-bottom:8px}
+  input[type=text],select{flex:1;padding:8px 10px;border:1px solid #1e1e4a;border-radius:6px;background:#0d0d1a;color:#e0e0e0;font-size:.84rem;outline:none}
+  input[type=text]:focus,select:focus{border-color:#e94560}
+  button{padding:8px 13px;border:none;border-radius:6px;cursor:pointer;font-size:.83rem;font-weight:600;transition:background .15s}
+  .btn-primary{background:#e94560;color:#fff}
+  .btn-primary:hover{background:#c73652}
+  .btn-outline{background:#1e1e4a;color:#8888cc}
+  .btn-outline:hover{background:#2a2a60}
+  #find-btn{width:100%;padding:10px;font-size:.9rem;margin-top:2px}
+  .meta{font-size:.76rem;color:#4fc3f7;min-height:14px;margin-bottom:6px;word-break:break-word}
+  #results-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  #results-header h2{font-size:.72rem;text-transform:uppercase;color:#555;letter-spacing:.5px}
+  #results-count{font-size:.72rem;color:#666}
+  .lot-card{background:#0d0d1a;border:1px solid #1e1e4a;border-radius:8px;padding:11px 13px;margin-bottom:7px;cursor:pointer;transition:border-color .15s}
+  .lot-card:hover{border-color:#4fc3f7}
+  .lot-card.active{border-color:#e94560}
+  .card-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5px}
+  .lot-name{font-weight:600;font-size:.86rem;flex:1;padding-right:8px}
+  .rank-badge{background:#e94560;color:#fff;border-radius:50%;width:22px;height:22px;min-width:22px;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700}
+  .occ-bar{height:4px;background:#1e1e4a;border-radius:2px;margin:4px 0 7px}
+  .occ-fill{height:100%;border-radius:2px}
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:3px 8px;font-size:.77rem;color:#666}
+  .stats span{color:#ccc;font-weight:500}
+  .price-highlight{color:#4fc3f7!important;font-size:.9rem}
+  #status{padding:7px 16px;font-size:.72rem;color:#444;background:#0d0d1a;border-top:1px solid #1e1e4a;flex-shrink:0}
+  #map-wrap{flex:1;position:relative}
+  #map{width:100%;height:100%}
+.legend{position:absolute;bottom:80px;right:14px;z-index:999;background:#12122acc;border:1px solid #1e1e4a;border-radius:8px;padding:8px 12px;font-size:.72rem}
+  .legend-row{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+  .legend-dot{width:10px;height:10px;border-radius:50%}
+  .empty{text-align:center;color:#444;padding:24px 16px;font-size:.83rem;line-height:1.6}
+  .leaflet-popup-content-wrapper{background:#12122a;color:#e0e0e0;border:1px solid #1e1e4a;border-radius:8px}
+  .leaflet-popup-tip{background:#12122a}
+  .p-title{font-weight:700;font-size:.9rem;margin-bottom:6px;color:#fff}
+  .p-row{display:flex;justify-content:space-between;font-size:.8rem;margin:3px 0}
+  .p-label{color:#555}
+  .p-value{color:#ccc;font-weight:500}
+  .p-price{color:#4fc3f7;font-size:.95rem;font-weight:700}
+  .tabs{display:flex;border-bottom:1px solid #1e1e4a}
+  .tab{flex:1;padding:10px;text-align:center;font-size:.78rem;font-weight:600;cursor:pointer;color:#555;border-bottom:2px solid transparent;transition:all .15s}
+  .tab.active{color:#e94560;border-bottom-color:#e94560}
+  .tab-panel{display:none}.tab-panel.active{display:block}
+  .analytics-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #1e1e4a;font-size:.8rem}
+  .analytics-row:last-child{border-bottom:none}
+  .analytics-bar{height:4px;background:#1e1e4a;border-radius:2px;margin-top:3px}
+  .analytics-fill{height:100%;border-radius:2px;background:#4fc3f7}
+  .stat-box{text-align:center;flex:1;padding:10px 4px}
+  .stat-val{font-size:1.3rem;font-weight:700;color:#4fc3f7}
+  .stat-lbl{font-size:.68rem;color:#555;text-transform:uppercase;margin-top:2px}
+  .ws-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#555;margin-right:5px;vertical-align:middle}
+  .ws-dot.on{background:#4caf50}
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h1>Smart<span>Park</span> İzmir</h1>
+
+  <div class="panel">
+    <label>Nereye Gidiyorsunuz?</label>
+    <div class="row">
+      <input type="text" id="dest-input" placeholder="Adres veya yer adı…" onkeydown="if(event.key==='Enter')geocodeDest()" />
+      <button class="btn-outline" onclick="geocodeDest()">Ara</button>
+    </div>
+    <div id="dest-meta" class="meta"></div>
+
+    <label>Park Süresi</label>
+    <select id="duration" style="width:100%;margin-bottom:10px">
+      <option value="1">1 saat</option>
+      <option value="2" selected>2 saat</option>
+      <option value="3">3 saat</option>
+      <option value="4">4 saat</option>
+      <option value="8">8 saat (tam gün)</option>
+    </select>
+
+    <button class="btn-primary" id="find-btn" onclick="findParking()">Park Yeri Bul</button>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('park',this)">Park Yeri</div>
+    <div class="tab" onclick="switchTab('analytics',this)">Analitik</div>
+  </div>
+
+  <div id="tab-park" class="tab-panel active" style="flex:1;overflow-y:auto;padding:14px 16px">
+    <div id="results-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h2 style="font-size:.72rem;text-transform:uppercase;color:#555;letter-spacing:.5px">Yakın Otoparklar</h2>
+      <span id="results-count" style="font-size:.72rem;color:#666"></span>
+    </div>
+    <div id="results-list">
+      <div class="empty">Gideceğiniz adresi girin,<br>ardından <b>Park Yeri Bul</b>'a tıklayın.</div>
+    </div>
+  </div>
+
+  <div id="tab-analytics" class="tab-panel" style="flex:1;overflow-y:auto;padding:14px 16px">
+    <div id="analytics-summary" style="display:flex;border:1px solid #1e1e4a;border-radius:8px;margin-bottom:12px;background:#0d0d1a">
+      <div class="stat-box"><div class="stat-val" id="a-lots">—</div><div class="stat-lbl">Otopark</div></div>
+      <div class="stat-box" style="border-left:1px solid #1e1e4a;border-right:1px solid #1e1e4a">
+        <div class="stat-val" id="a-avg">—</div><div class="stat-lbl">Ort. Doluluk</div>
+      </div>
+      <div class="stat-box"><div class="stat-val" id="a-readings">—</div><div class="stat-lbl">Ölçüm</div></div>
+    </div>
+    <div id="analytics-lots"><div class="empty">Yükleniyor…</div></div>
+  </div>
+
+  <div id="status"><span class="ws-dot" id="ws-dot"></span><span id="status-text">Bağlanıyor…</span></div>
+</div>
+
+<div id="map-wrap">
+  <div id="map"></div>
+  <div class="legend">
+    <div class="legend-row"><div class="legend-dot" style="background:#4caf50"></div> &lt; 50% dolu</div>
+    <div class="legend-row"><div class="legend-dot" style="background:#ff9800"></div> 50–75% dolu</div>
+    <div class="legend-row"><div class="legend-dot" style="background:#f44336"></div> 75–90% dolu</div>
+    <div class="legend-row"><div class="legend-dot" style="background:#9c27b0"></div> &gt; 90% dolu</div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const API = '';  // same-origin via Traefik
+
+let map, destMarker;
+let destCoords = null;
+let lotMarkers = {};
+
+map = L.map('map').setView([38.4192, 27.1287], 13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors', maxZoom: 19
+}).addTo(map);
+
+function occColor(pct) {
+  if (pct < 50) return '#4caf50';
+  if (pct < 75) return '#ff9800';
+  if (pct < 90) return '#f44336';
+  return '#9c27b0';
+}
+
+function pinIcon(pct) {
+  const c = occColor(pct);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="38" viewBox="0 0 30 38">
+    <path d="M15 0C6.716 0 0 6.716 0 15c0 11.25 15 23 15 23S30 26.25 30 15C30 6.716 23.284 0 15 0z"
+          fill="${c}" stroke="rgba(255,255,255,.8)" stroke-width="1.5"/>
+    <circle cx="15" cy="15" r="7" fill="rgba(0,0,0,.25)"/>
+    <text x="15" y="19" text-anchor="middle" fill="white" font-size="10" font-weight="700"
+          font-family="sans-serif">P</text>
+  </svg>`;
+  return L.divIcon({ html: svg, iconSize: [30, 38], iconAnchor: [15, 38], popupAnchor: [0, -40], className: '' });
+}
+
+function popupHtml(lot, dynPrice) {
+  const c = occColor(lot.occupancy_pct);
+  const price = dynPrice != null ? `₺${dynPrice}` : '—';
+  return `<div class="p-title">${lot.name || lot.lot_id}</div>
+    <div class="p-row"><span class="p-label">Doluluk</span><span style="color:${c};font-weight:700">${lot.occupancy_pct}%</span></div>
+    <div class="p-row"><span class="p-label">Boş / Toplam</span><span class="p-value">${lot.free} / ${lot.capacity}</span></div>
+    ${lot.forecast_occupancy_pct != null
+      ? `<div class="p-row"><span class="p-label">30dk Tahmin</span><span class="p-value">${lot.forecast_occupancy_pct}%</span></div>` : ''}
+    <div class="p-row"><span class="p-label">Dinamik Fiyat</span><span class="p-price">${price}</span></div>
+    ${lot.multiplier != null
+      ? `<div class="p-row"><span class="p-label">Çarpan</span><span class="p-value">×${lot.multiplier}</span></div>` : ''}
+    ${lot.distance_to_dest_m != null
+      ? `<div class="p-row"><span class="p-label">Hedefe Mesafe</span><span class="p-value">${lot.distance_to_dest_m} m</span></div>` : ''}`;
+}
+
+function renderMarkers(lots, priceMap) {
+  Object.values(lotMarkers).forEach(m => map.removeLayer(m));
+  lotMarkers = {};
+  lots.forEach(lot => {
+    const m = L.marker([lot.lat, lot.lng], { icon: pinIcon(lot.occupancy_pct) })
+      .bindPopup(popupHtml(lot, priceMap[lot.lot_id] ?? null))
+      .addTo(map);
+    lotMarkers[lot.lot_id] = m;
+  });
+}
+
+async function loadLots(priceMap = {}) {
+  try {
+    const r = await fetch(`${API}/occupancy`);
+    if (!r.ok) return;
+    const lots = await r.json();
+    renderMarkers(lots, priceMap);
+    setStatus(`${lots.length} otopark görüntüleniyor — ${new Date().toLocaleTimeString('tr-TR')}`);
+  } catch {
+    setStatus('Sunucuya bağlanılamıyor — servisler başlıyor olabilir');
+  }
+}
+
+async function geocodeDest() {
+  const q = document.getElementById('dest-input').value.trim();
+  if (!q) return;
+  setStatus('Adres aranıyor…');
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q + ', İzmir, Türkiye')}&format=json&limit=1`;
+    const data = await (await fetch(url, { headers: { 'Accept-Language': 'tr' } })).json();
+    if (!data.length) { alert('Adres bulunamadı.'); setStatus('Adres bulunamadı'); return; }
+    destCoords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+    if (destMarker) map.removeLayer(destMarker);
+    destMarker = L.marker([destCoords.lat, destCoords.lng], {
+      icon: L.divIcon({
+        html: '<div style="background:#e94560;width:14px;height:14px;border-radius:50%;border:2.5px solid #fff;box-shadow:0 1px 6px rgba(0,0,0,.5)"></div>',
+        iconSize: [14, 14], iconAnchor: [7, 7], className: ''
+      })
+    }).addTo(map).bindPopup(`<b>Hedef:</b> ${data[0].display_name}`);
+    map.setView([destCoords.lat, destCoords.lng], 14);
+    const name = data[0].display_name;
+    document.getElementById('dest-meta').textContent = name.length > 55 ? name.slice(0, 52) + '…' : name;
+    setStatus('Hedef belirlendi');
+  } catch { setStatus('Geocoding hatası'); }
+}
+
+async function findParking() {
+  if (!destCoords) { alert('Bir adres girin.'); return; }
+  const dur = parseInt(document.getElementById('duration').value);
+  setStatus('Öneriler hesaplanıyor…');
+  document.getElementById('results-list').innerHTML = '<div class="empty">Hesaplanıyor…</div>';
+  document.getElementById('results-count').textContent = '';
+
+  try {
+    const p = new URLSearchParams({
+      userLat: destCoords.lat, userLng: destCoords.lng,
+      destLat: destCoords.lat, destLng: destCoords.lng,
+      duration_hours: dur, top_k: 5
+    });
+    const resp = await fetch(`${API}/recommend?${p}`);
+    if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e.detail || `HTTP ${resp.status}`); }
+    const data = await resp.json();
+    const recs = data.recommendations;
+
+    const priceMap = Object.fromEntries(recs.map(r => [r.lot_id, r.dynamic_price_total]));
+    await loadLots(priceMap);
+
+    renderCards(recs);
+    document.getElementById('results-count').textContent = `${recs.length} sonuç`;
+
+    if (recs.length) {
+      const pts = recs.map(r => [r.lat, r.lng]);
+      if (destCoords) pts.push([destCoords.lat, destCoords.lng]);
+      map.fitBounds(L.latLngBounds(pts), { padding: [40, 40] });
+    }
+    setStatus(`${recs.length} öneri bulundu`);
+  } catch (e) {
+    document.getElementById('results-list').innerHTML = `<div class="empty">Hata: ${e.message}</div>`;
+    setStatus('Öneri alınamadı');
+  }
+}
+
+function renderCards(recs) {
+  if (!recs.length) {
+    document.getElementById('results-list').innerHTML = '<div class="empty">Bu bölgede uygun otopark bulunamadı.</div>';
+    return;
+  }
+  document.getElementById('results-list').innerHTML = recs.map((r, i) => {
+    const c = occColor(r.occupancy_pct);
+    return `<div class="lot-card" id="card-${r.lot_id}" onclick="focusLot('${r.lot_id}',${r.lat},${r.lng},this)">
+      <div class="card-top">
+        <div class="lot-name">${r.name || r.lot_id}</div>
+        <div class="rank-badge">${i + 1}</div>
+      </div>
+      <div class="occ-bar"><div class="occ-fill" style="width:${r.occupancy_pct}%;background:${c}"></div></div>
+      <div class="stats">
+        <div>Doluluk: <span style="color:${c}">${r.occupancy_pct}%</span></div>
+        <div>Boş: <span>${r.free}/${r.capacity}</span></div>
+        <div>Fiyat: <span class="price-highlight">₺${r.dynamic_price_total}</span></div>
+        <div>Mesafe: <span>${r.distance_to_dest_m} m</span></div>
+        <div>30dk Tahmin: <span>${r.forecast_occupancy_pct}%</span></div>
+        <div>Çarpan: <span>×${r.multiplier}</span></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function focusLot(lotId, lat, lng, card) {
+  map.setView([lat, lng], 16);
+  if (lotMarkers[lotId]) lotMarkers[lotId].openPopup();
+  document.querySelectorAll('.lot-card').forEach(c => c.classList.remove('active'));
+  card.classList.add('active');
+}
+
+function setStatus(msg) {
+  document.getElementById('status-text').textContent = msg;
+}
+
+// --- WebSocket ---
+function connectWS() {
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen = () => {
+    document.getElementById('ws-dot').classList.add('on');
+    setStatus('Canlı bağlantı aktif');
+  };
+  ws.onmessage = (e) => {
+    const lot = JSON.parse(e.data);
+    if (lotMarkers[lot.lot_id]) {
+      lotMarkers[lot.lot_id].setIcon(pinIcon(lot.occupancy_pct));
+      lotMarkers[lot.lot_id].setPopupContent(popupHtml(lot, null));
+    }
+  };
+  ws.onclose = () => {
+    document.getElementById('ws-dot').classList.remove('on');
+    setStatus('Bağlantı kesildi — yeniden bağlanıyor…');
+    setTimeout(connectWS, 5000);
+  };
+  ws.onerror = () => ws.close();
+}
+
+// --- Analytics ---
+function switchTab(name, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'analytics') loadAnalytics();
+}
+
+async function loadAnalytics() {
+  try {
+    const [sumRes, lotsRes] = await Promise.all([
+      fetch(`${API}/analytics/summary`),
+      fetch(`${API}/analytics/lots`)
+    ]);
+    const sum = await sumRes.json();
+    const lots = await lotsRes.json();
+
+    document.getElementById('a-lots').textContent = sum.total_lots ?? '—';
+    document.getElementById('a-avg').textContent = sum.avg_occupancy_pct != null ? `%${sum.avg_occupancy_pct}` : '—';
+    document.getElementById('a-readings').textContent = sum.total_readings ?? '—';
+
+    document.getElementById('analytics-lots').innerHTML = lots.map(l => {
+      const c = occColor(l.avg_occupancy_pct);
+      return `<div class="analytics-row" style="flex-direction:column;align-items:stretch">
+        <div style="display:flex;justify-content:space-between">
+          <span style="font-weight:600;font-size:.82rem">${l.lot_id}</span>
+          <span style="color:${c};font-weight:700">%${l.avg_occupancy_pct}</span>
+        </div>
+        <div class="analytics-bar"><div class="analytics-fill" style="width:${l.avg_occupancy_pct}%;background:${c}"></div></div>
+        <div style="display:flex;justify-content:space-between;font-size:.72rem;color:#555;margin-top:2px">
+          <span>Min: %${l.min_occupancy_pct}</span>
+          <span>Max: %${l.max_occupancy_pct}</span>
+          <span>${l.reading_count} ölçüm</span>
+        </div>
+      </div>`;
+    }).join('');
+  } catch {
+    document.getElementById('analytics-lots').innerHTML = '<div class="empty">Analitik verisi alınamadı.</div>';
+  }
+}
+
+loadLots();
+connectWS();
+</script>
+</body>
+</html>

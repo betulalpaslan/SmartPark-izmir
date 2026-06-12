@@ -1,0 +1,218 @@
+version: "3.9"
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      POSTGRES_USER: smartpark
+      POSTGRES_PASSWORD: smartpark
+      POSTGRES_DB: forecasting
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+      - ./forecasting/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smartpark -d forecasting"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  pricingdb:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: smartpark
+      POSTGRES_PASSWORD: smartpark
+      POSTGRES_DB: pricing
+    volumes:
+      - pricing_data:/var/lib/postgresql/data
+      - ./pricing-routing/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smartpark -d pricing"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  analyticsdb:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: smartpark
+      POSTGRES_PASSWORD: smartpark
+      POSTGRES_DB: analytics
+    volumes:
+      - analytics_data:/var/lib/postgresql/data
+      - ./analytics/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smartpark -d analytics"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  data-ingestion:
+    build: ./data-ingestion
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      POLL_INTERVAL: "30"
+    restart: unless-stopped
+
+  occupancy-state:
+    build: ./occupancy-state
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      REDIS_URL: redis://redis:6379
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.occupancy.rule=PathPrefix(`/occupancy`)"
+      - "traefik.http.routers.occupancy.priority=20"
+      - "traefik.http.services.occupancy.loadbalancer.server.port=8000"
+    restart: unless-stopped
+
+  forecasting:
+    build: ./forecasting
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      DATABASE_URL: postgresql://smartpark:smartpark@timescaledb:5432/forecasting
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.forecasting.rule=PathPrefix(`/forecast`)"
+      - "traefik.http.routers.forecasting.priority=20"
+      - "traefik.http.services.forecasting.loadbalancer.server.port=8000"
+    restart: unless-stopped
+
+  pricing-routing:
+    build: ./pricing-routing
+    depends_on:
+      pricingdb:
+        condition: service_healthy
+      occupancy-state:
+        condition: service_healthy
+      forecasting:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://smartpark:smartpark@pricingdb:5432/pricing
+      OCCUPANCY_SERVICE_URL: http://occupancy-state:8000
+      FORECASTING_SERVICE_URL: http://forecasting:8000
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pricing.rule=PathPrefix(`/recommend`) || PathPrefix(`/pricing`)"
+      - "traefik.http.routers.pricing.priority=20"
+      - "traefik.http.services.pricing.loadbalancer.server.port=8000"
+    restart: unless-stopped
+
+  notification:
+    build: ./notification
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/notifications/health')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.notification.rule=PathPrefix(`/ws`) || PathPrefix(`/notifications`)"
+      - "traefik.http.routers.notification.priority=20"
+      - "traefik.http.services.notification.loadbalancer.server.port=8000"
+    restart: unless-stopped
+
+  analytics:
+    build: ./analytics
+    depends_on:
+      analyticsdb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://smartpark:smartpark@analyticsdb:5432/analytics
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/analytics/health')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.analytics.rule=PathPrefix(`/analytics`)"
+      - "traefik.http.routers.analytics.priority=20"
+      - "traefik.http.services.analytics.loadbalancer.server.port=8000"
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.frontend.priority=1"
+      - "traefik.http.services.frontend.loadbalancer.server.port=80"
+
+  traefik:
+    image: traefik:v3.0
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+
+volumes:
+  timescale_data:
+  pricing_data:
+  analytics_data:
