@@ -98,6 +98,27 @@ docker compose down          # servisleri durdurur
 docker compose down -v       # servisleri + veritabanı verilerini siler
 ```
 
+## Testler
+
+Unit testler servisleri Docker ile ayağa kaldırmadan kritik iş kurallarını kontrol eder:
+
+- İzmir API yanıtlarının normalize edilmesi ve doluluk yüzdesi hesabı
+- Dinamik fiyat çarpanı ve mesafe hesabı
+- Frontend'in HTML5 geolocation koordinatlarını `/recommend` isteğine eklemesi
+
+Standart Python test runner ile:
+
+```bash
+python -m unittest discover -s tests
+```
+
+Pytest ile:
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
 ## API Endpoint'leri
 
 ### Occupancy State
