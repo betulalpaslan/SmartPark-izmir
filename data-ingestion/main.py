@@ -19,6 +19,25 @@ ROUTING_KEY = "parking.occupancy.changed"
 _prev: dict[str, str] = {}  # lot_id -> "free:capacity" for delta detection
 
 
+def first_present(*values):
+    for value in values:
+        if value is not None and value != "":
+            return value
+    return None
+
+
+def to_int(value, default: int = 0) -> int:
+    if value is None or value == "":
+        return default
+    return int(float(str(value).replace(",", ".")))
+
+
+def to_float(value, default: float = 0.0) -> float:
+    if value is None or value == "":
+        return default
+    return float(str(value).replace(",", "."))
+
+
 def normalize(raw: dict) -> dict | None:
     try:
         lot_id = str(
@@ -27,20 +46,59 @@ def normalize(raw: dict) -> dict | None:
         if not lot_id:
             return None
 
-        occ = raw.get("occupancy", {}).get("total", {})
-        free = int(occ.get("free") or raw.get("BosKapasite") or raw.get("Bos") or raw.get("bosKapasite") or 0)
-        occupied = int(occ.get("occupied") or 0)
-        capacity = int(
-            raw.get("Kapasite") or raw.get("kapasite") or raw.get("ToplamKapasite") or (free + occupied) or 0
+        occ = raw.get("occupancy", {})
+        if isinstance(occ, dict):
+            occ = occ.get("total") or occ
+        else:
+            occ = {}
+
+        free_value = first_present(
+            occ.get("free"),
+            raw.get("BosKapasite"),
+            raw.get("Bos"),
+            raw.get("bosKapasite"),
+            raw.get("empty"),
+            raw.get("emptyCapacity"),
+        )
+        occupied_value = first_present(
+            occ.get("occupied"),
+            raw.get("DoluKapasite"),
+            raw.get("Dolu"),
+            raw.get("doluKapasite"),
+            raw.get("occupied"),
+            raw.get("occupiedCapacity"),
+        )
+
+        free = to_int(free_value)
+        occupied = to_int(occupied_value)
+        capacity = to_int(
+            first_present(
+                occ.get("capacity"),
+                occ.get("total"),
+                raw.get("Kapasite"),
+                raw.get("kapasite"),
+                raw.get("ToplamKapasite"),
+                raw.get("capacity"),
+                raw.get("totalCapacity"),
+            )
         )
         if capacity <= 0:
+            capacity = free + occupied
+        if capacity <= 0:
             return None
+        if occupied_value is None:
+            occupied = capacity - free
+        if free_value is None:
+            free = capacity - occupied
+
+        free = max(0, min(free, capacity))
+        occupied = max(0, min(occupied, capacity))
 
         name = str(
             raw.get("name") or raw.get("Isim") or raw.get("isim") or raw.get("Ad") or raw.get("OtoparkAdi") or ""
         )
-        lat = float(raw.get("lat") or raw.get("Enlem") or raw.get("enlem") or raw.get("KonumX") or 0)
-        lng = float(raw.get("lng") or raw.get("Boylam") or raw.get("boylam") or raw.get("KonumY") or 0)
+        lat = to_float(first_present(raw.get("lat"), raw.get("Enlem"), raw.get("enlem"), raw.get("KonumX")))
+        lng = to_float(first_present(raw.get("lng"), raw.get("Boylam"), raw.get("boylam"), raw.get("KonumY")))
 
         return {
             "lot_id": lot_id,
