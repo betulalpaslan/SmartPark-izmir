@@ -79,6 +79,12 @@
     </div>
     <div id="dest-meta" class="meta"></div>
 
+    <label>Nereden Başlıyorsunuz?</label>
+    <div class="row">
+      <button class="btn-outline" style="width:100%" onclick="locateUser()">Konumumu Kullan</button>
+    </div>
+    <div id="user-meta" class="meta"></div>
+
     <label>Park Süresi</label>
     <select id="duration" style="width:100%;margin-bottom:10px">
       <option value="1">1 saat</option>
@@ -134,8 +140,9 @@
 <script>
 const API = '';  // same-origin via Traefik
 
-let map, destMarker;
+let map, destMarker, userMarker;
 let destCoords = null;
+let userCoords = null;
 let lotMarkers = {};
 
 map = L.map('map').setView([38.4192, 27.1287], 13);
@@ -175,6 +182,46 @@ function popupHtml(lot, dynPrice) {
       ? `<div class="p-row"><span class="p-label">Çarpan</span><span class="p-value">×${lot.multiplier}</span></div>` : ''}
     ${lot.distance_to_dest_m != null
       ? `<div class="p-row"><span class="p-label">Hedefe Mesafe</span><span class="p-value">${lot.distance_to_dest_m} m</span></div>` : ''}`;
+}
+
+function setUserPosition(lat, lng, accuracy) {
+  userCoords = { lat, lng };
+  if (userMarker) map.removeLayer(userMarker);
+  userMarker = L.circleMarker([lat, lng], {
+    radius: 7,
+    color: '#fff',
+    weight: 2,
+    fillColor: '#4fc3f7',
+    fillOpacity: 0.95
+  }).addTo(map).bindPopup('Konumunuz');
+
+  const suffix = accuracy ? ` (${Math.round(accuracy)} m)` : '';
+  document.getElementById('user-meta').textContent = `Konum alındı${suffix}`;
+}
+
+function locateUser() {
+  if (!navigator.geolocation) {
+    setStatus('Tarayıcı konum desteklemiyor');
+    return Promise.resolve(null);
+  }
+
+  setStatus('Konum alınıyor…');
+  return new Promise(resolve => {
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        const { latitude, longitude, accuracy } = pos.coords;
+        setUserPosition(latitude, longitude, accuracy);
+        setStatus('Konum alındı');
+        resolve(userCoords);
+      },
+      () => {
+        document.getElementById('user-meta').textContent = 'Konum alınamadı';
+        setStatus('Konum alınamadı');
+        resolve(null);
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+    );
+  });
 }
 
 function renderMarkers(lots, priceMap) {
@@ -226,13 +273,14 @@ async function geocodeDest() {
 async function findParking() {
   if (!destCoords) { alert('Bir adres girin.'); return; }
   const dur = parseInt(document.getElementById('duration').value);
+  const startCoords = userCoords || await locateUser() || destCoords;
   setStatus('Öneriler hesaplanıyor…');
   document.getElementById('results-list').innerHTML = '<div class="empty">Hesaplanıyor…</div>';
   document.getElementById('results-count').textContent = '';
 
   try {
     const p = new URLSearchParams({
-      userLat: destCoords.lat, userLng: destCoords.lng,
+      userLat: startCoords.lat, userLng: startCoords.lng,
       destLat: destCoords.lat, destLng: destCoords.lng,
       duration_hours: dur, top_k: 5
     });
@@ -250,6 +298,7 @@ async function findParking() {
     if (recs.length) {
       const pts = recs.map(r => [r.lat, r.lng]);
       if (destCoords) pts.push([destCoords.lat, destCoords.lng]);
+      if (userCoords) pts.push([userCoords.lat, userCoords.lng]);
       map.fitBounds(L.latLngBounds(pts), { padding: [40, 40] });
     }
     setStatus(`${recs.length} öneri bulundu`);
