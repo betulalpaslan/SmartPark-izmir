@@ -1,12 +1,12 @@
 # SmartPark İzmir
 
-İzmir'deki otopark doluluk verilerini gerçek zamanlı izleyen, dinamik fiyatlandırma ve rota önerisi sunan mikroservis tabanlı akıllı otopark yönetim sistemi.
+A microservices-based smart parking management system that monitors real-time parking occupancy in İzmir, provides dynamic pricing, and recommends the best parking spots.
 
-## Mimari
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         Kullanıcı (Tarayıcı)                        │
+│                         User (Browser)                               │
 └──────────────────────────────┬──────────────────────────────────────┘
                                │ HTTP / WebSocket
                                ▼
@@ -24,136 +24,135 @@
 └───┬───┘ └─────┬──────┘ │ │  + Retry    │ │ └──────┬──────┘ └────┬───────┘
     │           │         │ └──────────────┘ │       │             │
     │           │         └──────────────────┘       │             │
-    │           │                                     │             │
     └───────────┴─────────────────────────────────────┴─────────────┘
                                ▲ RabbitMQ (Topic Exchange)
                                │ parking.occupancy.changed
                     ┌──────────┴──────────┐
                     │   Data Ingestion    │
-                    │  (her 30 saniyede)  │
+                    │  (every 30 seconds) │
                     └──────────┬──────────┘
                                │ polling
                     ┌──────────┴──────────┐
-                    │  İzmir Büyükşehir   │
-                    │  Belediyesi API     │
+                    │  İzmir Municipality │
+                    │      Open API       │
                     └─────────────────────┘
 ```
 
-## Uygulanan Mikroservis Kalıpları
+## Microservices Patterns Applied
 
-| Kalıp | Nerede | Açıklama |
-|-------|--------|----------|
-| **API Gateway** | Traefik | Tüm dış trafiği tek noktadan yönlendirir |
-| **Event-Driven Architecture** | RabbitMQ Topic Exchange | Servisler birbirinden habersiz, mesaj üzerinden haberleşir |
-| **Database per Service** | 3× PostgreSQL, 1× TimescaleDB, 1× Redis | Her servis kendi veritabanına sahip, paylaşım yok |
-| **Circuit Breaker** | pricing-routing | Downstream servis çökerse kaskad hata yerine fail-fast davranışı |
-| **Retry + Exponential Backoff** | pricing-routing | Geçici hatalar için 1s → 2s → 4s bekleme süresiyle yeniden deneme |
-| **Health Check** | Tüm servisler | `/health` endpoint; bağımlılık durumunu raporlar |
-| **Correlation ID** | Tüm servisler | `X-Correlation-ID` header ile istekler servis zincirinde izlenebilir |
-| **Service Discovery** | Docker DNS | Servisler birbirini isim üzerinden (container adı) bulur |
+| Pattern | Where | Description |
+|---------|-------|-------------|
+| **API Gateway** | Traefik | Single entry point for all external traffic |
+| **Event-Driven Architecture** | RabbitMQ Topic Exchange | Services communicate via messages, fully decoupled |
+| **Database per Service** | 3× PostgreSQL, 1× TimescaleDB, 1× Redis | Each service owns its data, no shared databases |
+| **Circuit Breaker** | pricing-routing | Fail-fast when a downstream service is unavailable, prevents cascade failures |
+| **Retry + Exponential Backoff** | pricing-routing | Retries transient failures with 1s → 2s → 4s delay |
+| **Health Check** | All services | `/health` endpoint reports dependency status |
+| **Correlation ID** | All services | `X-Correlation-ID` header traces a request across the service chain |
+| **Service Discovery** | Docker DNS | Services find each other by container name |
 
-## Servisler
+## Services
 
-| Servis | Port (iç) | Teknoloji | Görev |
-|--------|-----------|-----------|-------|
-| data-ingestion | — | Python + APScheduler | İzmir API'sini 30s'de bir çeker, değişimleri RabbitMQ'ya yayar |
-| occupancy-state | 8000 | FastAPI + Redis | Anlık doluluk durumunu tutar, coğrafi sorgu sunar |
-| forecasting | 8000 | FastAPI + TimescaleDB | EWMA + saatlik profil ile 30dk öngörüsü üretir |
-| pricing-routing | 8000 | FastAPI + PostgreSQL | Dinamik fiyat hesaplar, en iyi otoparkı önerir |
-| notification | 8000 | FastAPI + WebSocket | Değişiklikleri bağlı tarayıcılara anlık iletir |
-| analytics | 8000 | FastAPI + PostgreSQL | Saatlik ve genel istatistik biriktirir |
-| frontend | 80 | Nginx + Leaflet.js | Harita, arama ve analitik arayüzü |
+| Service | Port (internal) | Technology | Responsibility |
+|---------|----------------|------------|----------------|
+| data-ingestion | — | Python + APScheduler | Polls İzmir API every 30s, publishes changes to RabbitMQ |
+| occupancy-state | 8000 | FastAPI + Redis | Maintains live occupancy state, serves geo queries |
+| forecasting | 8000 | FastAPI + TimescaleDB | Produces 30-min forecasts using EWMA + hourly profiles |
+| pricing-routing | 8000 | FastAPI + PostgreSQL | Calculates dynamic prices, recommends best parking spots |
+| notification | 8000 | FastAPI + WebSocket | Pushes live updates to connected browsers |
+| analytics | 8000 | FastAPI + PostgreSQL | Aggregates hourly and system-wide statistics |
+| frontend | 80 | Nginx + Leaflet.js | Map, search, and analytics UI |
 
-## Gereksinimler
+## Requirements
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows / macOS)  
-  veya Docker Engine + Docker Compose (Linux)
+  or Docker Engine + Docker Compose (Linux)
 
-Başka hiçbir şey kurmanıza gerek yok. Python, PostgreSQL, Redis vs. Docker içinde çalışır.
+Nothing else needs to be installed. Python, PostgreSQL, Redis, etc. all run inside Docker.
 
-## Kurulum ve Çalıştırma
+## Getting Started
 
 ```bash
-git clone https://github.com/<kullanici>/smartpark-izmir.git
+git clone https://github.com/<username>/smartpark-izmir.git
 cd smartpark-izmir
 docker compose up --build
 ```
 
-İlk açılış image'ları indirdiği için 2-3 dakika sürebilir.
+First run may take 2–3 minutes to pull images.
 
-Tarayıcıdan açın: **http://localhost**
+Open in browser: **http://localhost**
 
-### Diğer Arayüzler
+### Other Interfaces
 
-| Adres | Ne |
-|-------|----|
-| http://localhost | SmartPark uygulaması |
-| http://localhost:8080 | Traefik dashboard (yönlendirme durumu) |
-| http://localhost:15672 | RabbitMQ yönetim paneli (`guest` / `guest`) |
+| URL | What |
+|-----|------|
+| http://localhost | SmartPark application |
+| http://localhost:8080 | Traefik dashboard (routing status) |
+| http://localhost:15672 | RabbitMQ management UI (`guest` / `guest`) |
 
-### Durdurma
+### Stopping
 
 ```bash
-docker compose down          # servisleri durdurur
-docker compose down -v       # servisleri + veritabanı verilerini siler
+docker compose down        # stop services
+docker compose down -v     # stop services and delete database volumes
 ```
 
-## API Endpoint'leri
+## API Endpoints
 
 ### Occupancy State
 ```
-GET /occupancy                          → tüm otoparklar
-GET /occupancy/{lot_id}                 → tek otopark
-GET /occupancy/near?lat=&lng=&radius=   → yakındaki otoparklar
-GET /health                             → servis sağlık durumu
+GET /occupancy                          → all parking lots
+GET /occupancy/{lot_id}                 → single lot
+GET /occupancy/near?lat=&lng=&radius=   → nearby lots (geo query)
+GET /health                             → service health status
 ```
 
 ### Forecasting
 ```
-GET /forecast/{lot_id}?horizon=30m      → doluluk tahmini
-GET /health                             → servis sağlık durumu
+GET /forecast/{lot_id}?horizon=30m      → occupancy forecast
+GET /health                             → service health status
 ```
 
 ### Pricing & Routing
 ```
 GET /recommend?userLat=&userLng=&destLat=&destLng=&duration_hours=2
 GET /pricing/{lot_id}?duration_hours=1
-GET /health                             → circuit breaker durumları dahil
+GET /health                             → includes circuit breaker states
 ```
 
 ### Analytics
 ```
-GET /analytics/summary                  → sistem geneli istatistik
-GET /analytics/lots                     → otopark bazlı istatistik
-GET /analytics/hourly/{lot_id}          → saatlik doluluk profili
+GET /analytics/summary                  → system-wide statistics
+GET /analytics/lots                     → per-lot statistics
+GET /analytics/hourly/{lot_id}          → hourly occupancy profile
 GET /analytics/health
 ```
 
 ### Notification
 ```
-WS  /ws                                 → gerçek zamanlı güncellemeler
+WS  /ws                                 → real-time occupancy updates
 GET /notifications/status
 GET /notifications/health
 ```
 
-## Circuit Breaker Davranışı
+## Circuit Breaker Behavior
 
-`pricing-routing` servisi, `occupancy-state` ve `forecasting`'e çağrı yaparken circuit breaker kullanır:
+The `pricing-routing` service uses a circuit breaker for calls to `occupancy-state` and `forecasting`:
 
 ```
-Normal:   CLOSED  → servis çağrısı yapılır
-5 hata:   OPEN    → çağrı yapılmaz, anında 503 döner (fail-fast)
-30 sn:    HALF_OPEN → bir probe çağrısı yapılır
-Başarılı: CLOSED  → normal işleme geri döner
+Normal →  CLOSED    calls go through as usual
+5 failures → OPEN   calls are rejected immediately with 503 (fail-fast)
+After 30s → HALF_OPEN  one probe call is allowed
+Success →  CLOSED   normal operation resumes
 ```
 
-`GET /health` endpoint'inden anlık circuit durumu görülebilir.
+Current circuit state is visible at `GET /health`.
 
-## Teknoloji Yığını
+## Tech Stack
 
 - **Backend:** Python 3.11, FastAPI, Uvicorn
 - **Message Broker:** RabbitMQ 3.13
-- **Veritabanları:** PostgreSQL 16, TimescaleDB (zaman serisi), Redis 7
+- **Databases:** PostgreSQL 16, TimescaleDB (time-series), Redis 7
 - **API Gateway:** Traefik v3
 - **Frontend:** Vanilla JS, Leaflet.js, OpenStreetMap
-- **Altyapı:** Docker Compose
+- **Infrastructure:** Docker Compose
