@@ -1,0 +1,515 @@
+{
+  "info": {
+    "_postman_id": "b2cddc4f-a0f3-4425-b804-1c0d4f3a0493",
+    "name": "SmartPark Izmir API",
+    "description": "Postman collection for the SmartPark Izmir microservice demo. Start the system with `docker compose up --build`, select the `SmartPark Izmir - Local` environment, then run the requests in order.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "01 - Frontend smoke check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            ""
+          ]
+        },
+        "description": "Checks that Traefik routes the root path to the frontend."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('frontend is reachable', function () {",
+              "  pm.expect(pm.response.code).to.be.oneOf([200, 304]);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Occupancy State",
+      "item": [
+        {
+          "name": "Get all lots",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/occupancy",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "occupancy"
+              ]
+            },
+            "description": "Returns the current in-memory occupancy state from Redis. This request also saves the first returned `lot_id` into the environment."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const lots = pm.response.json();",
+                  "pm.test('response is an array', function () {",
+                  "  pm.expect(lots).to.be.an('array');",
+                  "});",
+                  "",
+                  "if (Array.isArray(lots) && lots.length > 0) {",
+                  "  pm.environment.set('lot_id', lots[0].lot_id);",
+                  "  pm.test('first lot has occupancy fields', function () {",
+                  "    pm.expect(lots[0]).to.have.property('capacity');",
+                  "    pm.expect(lots[0]).to.have.property('free');",
+                  "    pm.expect(lots[0]).to.have.property('occupancy_pct');",
+                  "  });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get nearby lots",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/occupancy/near?lat={{dest_lat}}&lng={{dest_lng}}&radius={{radius}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "occupancy",
+                "near"
+              ],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "{{dest_lat}}"
+                },
+                {
+                  "key": "lng",
+                  "value": "{{dest_lng}}"
+                },
+                {
+                  "key": "radius",
+                  "value": "{{radius}}"
+                }
+              ]
+            },
+            "description": "Finds parking lots near the destination coordinate."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const lots = pm.response.json();",
+                  "pm.test('response is an array', function () {",
+                  "  pm.expect(lots).to.be.an('array');",
+                  "});",
+                  "",
+                  "if (Array.isArray(lots) && lots.length > 0) {",
+                  "  pm.environment.set('lot_id', lots[0].lot_id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get lot by id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/occupancy/{{lot_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "occupancy",
+                "{{lot_id}}"
+              ]
+            },
+            "description": "Fetches one lot from the occupancy service."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('lot_id is present', function () {",
+                  "  pm.expect(pm.response.json()).to.have.property('lot_id');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Pricing and Routing",
+      "item": [
+        {
+          "name": "Get recommendations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/recommend?userLat={{user_lat}}&userLng={{user_lng}}&destLat={{dest_lat}}&destLng={{dest_lng}}&duration_hours={{duration_hours}}&top_k={{top_k}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "recommend"
+              ],
+              "query": [
+                {
+                  "key": "userLat",
+                  "value": "{{user_lat}}"
+                },
+                {
+                  "key": "userLng",
+                  "value": "{{user_lng}}"
+                },
+                {
+                  "key": "destLat",
+                  "value": "{{dest_lat}}"
+                },
+                {
+                  "key": "destLng",
+                  "value": "{{dest_lng}}"
+                },
+                {
+                  "key": "duration_hours",
+                  "value": "{{duration_hours}}"
+                },
+                {
+                  "key": "top_k",
+                  "value": "{{top_k}}"
+                }
+              ]
+            },
+            "description": "Returns ranked parking recommendations with dynamic prices."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('recommendations array exists', function () {",
+                  "  pm.expect(body).to.have.property('recommendations');",
+                  "  pm.expect(body.recommendations).to.be.an('array');",
+                  "});",
+                  "",
+                  "if (body.recommendations && body.recommendations.length > 0) {",
+                  "  const first = body.recommendations[0];",
+                  "  pm.environment.set('lot_id', first.lot_id);",
+                  "  pm.test('recommendation has dynamic price and score', function () {",
+                  "    pm.expect(first).to.have.property('dynamic_price_total');",
+                  "    pm.expect(first).to.have.property('multiplier');",
+                  "    pm.expect(first).to.have.property('score');",
+                  "  });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get dynamic price for lot",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/pricing/{{lot_id}}?duration_hours={{duration_hours}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "pricing",
+                "{{lot_id}}"
+              ],
+              "query": [
+                {
+                  "key": "duration_hours",
+                  "value": "{{duration_hours}}"
+                }
+              ]
+            },
+            "description": "Computes the dynamic price for the selected lot."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('price fields are present', function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body).to.have.property('base_price_per_hour');",
+                  "  pm.expect(body).to.have.property('multiplier');",
+                  "  pm.expect(body).to.have.property('dynamic_price_total');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Forecasting",
+      "item": [
+        {
+          "name": "Get forecast for lot",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/forecast/{{lot_id}}?horizon={{horizon}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "forecast",
+                "{{lot_id}}"
+              ],
+              "query": [
+                {
+                  "key": "horizon",
+                  "value": "{{horizon}}"
+                }
+              ]
+            },
+            "description": "Returns a short-term occupancy forecast. If the system has just started and no event reached forecasting yet, wait for ingestion and run this again."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('forecast field exists', function () {",
+                  "  pm.expect(pm.response.json()).to.have.property('forecast_occupancy_pct');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Analytics",
+      "item": [
+        {
+          "name": "Get analytics summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/analytics/summary",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "analytics",
+                "summary"
+              ]
+            },
+            "description": "Returns system-wide aggregate occupancy statistics."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get analytics by lot",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/analytics/lots",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "analytics",
+                "lots"
+              ]
+            },
+            "description": "Returns aggregate statistics per lot."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('response is an array', function () {",
+                  "  pm.expect(pm.response.json()).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get hourly profile for lot",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/analytics/hourly/{{lot_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "analytics",
+                "hourly",
+                "{{lot_id}}"
+              ]
+            },
+            "description": "Returns hourly occupancy averages for the selected lot."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "Get notification status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/notifications/status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notifications",
+                "status"
+              ]
+            },
+            "description": "Shows the number of connected WebSocket clients."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get notification health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/notifications/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notifications",
+                "health"
+              ]
+            },
+            "description": "Health check for the notification service through Traefik."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
