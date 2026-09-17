@@ -50,20 +50,6 @@ services:
       timeout: 3s
       retries: 20
 
-  analyticsdb:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: smartpark
-      POSTGRES_PASSWORD: smartpark
-      POSTGRES_DB: analytics
-    volumes:
-      - analytics_data:/var/lib/postgresql/data
-      - ./analytics/init.sql:/docker-entrypoint-initdb.d/init.sql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U smartpark -d analytics"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
 
   data-ingestion:
     build: ./data-ingestion
@@ -118,7 +104,7 @@ services:
       start_period: 30s
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.forecasting.rule=PathPrefix(`/forecast`)"
+      - "traefik.http.routers.forecasting.rule=PathPrefix(`/forecast`)||PathPrefix(`/analytics`)"
       - "traefik.http.routers.forecasting.priority=20"
       - "traefik.http.services.forecasting.loadbalancer.server.port=8000"
     restart: unless-stopped
@@ -169,29 +155,6 @@ services:
       - "traefik.http.services.notification.loadbalancer.server.port=8000"
     restart: unless-stopped
 
-  analytics:
-    build: ./analytics
-    depends_on:
-      analyticsdb:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgresql://smartpark:smartpark@analyticsdb:5432/analytics
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/analytics/health')\" || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.analytics.rule=PathPrefix(`/analytics`)"
-      - "traefik.http.routers.analytics.priority=20"
-      - "traefik.http.services.analytics.loadbalancer.server.port=8000"
-    restart: unless-stopped
-
   frontend:
     build: ./frontend
     labels:
@@ -217,4 +180,3 @@ services:
 volumes:
   timescale_data:
   pricing_data:
-  analytics_data:

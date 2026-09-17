@@ -188,3 +188,69 @@ def forecast(lot_id: str, horizon: str = "30m"):
         "profile_pct": round(s["profile"][target_hour], 1),
         "forecast_at": (now + timedelta(minutes=minutes)).isoformat(),
     }
+# ─── Analytics ────────────────────────────────────────────────────────────────
+# Ayrı analytics servisi ve kendi PostgreSQL'i kaldırıldı; istatistikler artık
+# lot_hourly continuous aggregate'inden okunuyor.
+
+_WEIGHTED_AVG = """ROUND((SUM(avg_occupancy_pct * reading_count)
+                          / NULLIF(SUM(reading_count), 0))::numeric, 1)"""
+
+
+@app.get("/analytics/summary")
+def analytics_summary():
+    with _db() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(f"""
+            SELECT COUNT(DISTINCT lot_id) AS total_lots,
+                   {_WEIGHTED_AVG}        AS avg_occupancy_pct,
+                   SUM(reading_count)     AS total_readings,
+                   MIN(bucket)            AS first_reading,
+                   MAX(bucket)            AS last_reading
+            FROM lot_hourly
+        """)
+        return dict(cur.fetchone())
+
+
+@app.get("/analytics/lots")
+def analytics_lots():
+    with _db() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(f"""
+            SELECT lot_id,
+                   {_WEIGHTED_AVG}                           AS avg_occupancy_pct,
+                   ROUND(MAX(max_occupancy_pct)::numeric, 1) AS max_occupancy_pct,
+                   ROUND(MIN(min_occupancy_pct)::numeric, 1) AS min_occupancy_pct,
+                   SUM(reading_count)                        AS reading_count,
+                   MAX(bucket)                               AS last_seen
+            FROM lot_hourly
+            GROUP BY lot_id
+            ORDER BY avg_occupancy_pct DESC
+        """)
+        return [dict(r) for r in cur.fetchall()]
+
+
+@app.get("/analytics/hourly/{lot_id}")
+def analytics_hourly(lot_id: str):
+    with _db() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(f"""
+            SELECT EXTRACT(HOUR FROM bucket)::int AS hour,
+                   {_WEIGHTED_AVG}                AS avg_occupancy_pct,
+                   SUM(reading_count)             AS reading_count
+            FROM lot_hourly
+            WHERE lot_id = %s
+            GROUP BY hour
+            ORDER BY hour
+        """, (lot_id,))
+        rows = cur.fetchall()
+    if not rows:
+        raise HTTPException(404, detail="Bu lot için veri yok")
+    return [dict(r) for r in rows]
+
+
+@app.get("/analytics/health")
+def analytics_health():
+    try:
+        with _db() as conn, conn.cursor() as cur:
+            cur.execute("SELECT COUNT(DISTINCT lot_id) FROM lot_hourly")
+            count = cur.fetchone()[0]
+        return {"status": "ok", "tracked_lots": count}
+    except Exception as exc:
+        raise HTTPException(503, detail=str(exc))

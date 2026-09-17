@@ -2,6 +2,16 @@
 
 A microservices-based smart parking management system that monitors real-time parking occupancy in İzmir, provides dynamic pricing, and recommends the best parking spots.
 
+## Screenshots
+
+**Finding parking near a destination.** The user searches for Konak Meydanı; the five best lots are ranked by distance, dynamic price and availability, and map pins are colored by live occupancy.
+
+![Parking recommendations for Konak Meydanı with ranked lots, dynamic prices and occupancy-colored map pins](docs/screenshots/recommendations.png)
+
+**Analytics.** System-wide averages and per-lot occupancy statistics, served from the TimescaleDB continuous aggregate.
+
+![Analytics tab showing total lots, average occupancy, reading count and per-lot statistics](docs/screenshots/analytics.png)
+
 ## Architecture
 
 ```
@@ -13,18 +23,18 @@ A microservices-based smart parking management system that monitors real-time pa
 ┌─────────────────────────────────────────────────────────────────────┐
 │                      API Gateway (Traefik)                           │
 │   /occupancy  /forecast  /recommend  /pricing  /analytics  /ws      │
-└───┬───────┬───────┬───────────┬──────────┬──────────────────────────┘
-    │       │       │           │          │
-    ▼       ▼       ▼           ▼          ▼
-┌───────┐ ┌────────────┐ ┌──────────────────┐ ┌─────────────┐ ┌────────────┐
-│Occup. │ │Forecasting │ │Pricing & Routing │ │Notification │ │ Analytics  │
-│State  │ │  Service   │ │    Service       │ │  Service    │ │  Service   │
-│       │ │            │ │ ┌──────────────┐ │ │             │ │            │
-│ Redis │ │TimescaleDB │ │ │Circuit Break.│ │ │  WebSocket  │ │ PostgreSQL │
-└───┬───┘ └─────┬──────┘ │ │  + Retry    │ │ └──────┬──────┘ └────┬───────┘
-    │           │         │ └──────────────┘ │       │             │
-    │           │         └──────────────────┘       │             │
-    └───────────┴─────────────────────────────────────┴─────────────┘
+└───┬────────────┬──────────────────┬──────────────────┬──────────────┘
+    │            │                  │                  │
+    ▼            ▼                  ▼                  ▼
+┌───────┐ ┌──────────────┐ ┌──────────────────┐ ┌─────────────┐
+│Occup. │ │ Forecasting  │ │Pricing & Routing │ │Notification │
+│State  │ │ + Analytics  │ │    Service       │ │  Service    │
+│       │ │              │ │ ┌──────────────┐ │ │             │
+│ Redis │ │ TimescaleDB  │ │ │Circuit Break.│ │ │  WebSocket  │
+└───┬───┘ └──────┬───────┘ │ │  + Retry    │ │ └──────┬──────┘
+    │            │          │ └──────────────┘ │       │
+    │            │          └──────────────────┘       │
+    └────────────┴─────────────────────────────────────┘
                                ▲ RabbitMQ (Topic Exchange)
                                │ parking.occupancy.changed
                     ┌──────────┴──────────┐
@@ -44,7 +54,7 @@ A microservices-based smart parking management system that monitors real-time pa
 |---------|-------|-------------|
 | **API Gateway** | Traefik | Single entry point for all external traffic |
 | **Event-Driven Architecture** | RabbitMQ Topic Exchange | Services communicate via messages, fully decoupled |
-| **Database per Service** | 3× PostgreSQL, 1× TimescaleDB, 1× Redis | Each service owns its data, no shared databases |
+| **Database per Service** | 1× PostgreSQL, 1× TimescaleDB, 1× Redis | Each service owns its data, no shared databases |
 | **Circuit Breaker** | pricing-routing | Fail-fast when a downstream service is unavailable, prevents cascade failures |
 | **Retry + Exponential Backoff** | pricing-routing | Retries transient failures with 1s → 2s → 4s delay |
 | **Health Check** | All services | `/health` endpoint reports dependency status |
@@ -57,10 +67,9 @@ A microservices-based smart parking management system that monitors real-time pa
 |---------|----------------|------------|----------------|
 | data-ingestion | — | Python + APScheduler | Polls İzmir API every 30s, publishes changes to RabbitMQ |
 | occupancy-state | 8000 | FastAPI + Redis | Maintains live occupancy state, serves geo queries |
-| forecasting | 8000 | FastAPI + TimescaleDB | Produces 30-min forecasts using EWMA + hourly profiles |
+| forecasting | 8000 | FastAPI + TimescaleDB | Produces 30-min forecasts using EWMA + hourly profiles; also serves the analytics endpoints from the `lot_hourly` continuous aggregate |
 | pricing-routing | 8000 | FastAPI + PostgreSQL | Calculates dynamic prices, recommends best parking spots |
 | notification | 8000 | FastAPI + WebSocket | Pushes live updates to connected browsers |
-| analytics | 8000 | FastAPI + PostgreSQL | Aggregates hourly and system-wide statistics |
 | frontend | 80 | Nginx + Leaflet.js | Map, search, and analytics UI |
 
 ## Requirements
@@ -121,6 +130,11 @@ GET /health                             → includes circuit breaker states
 ```
 
 ### Analytics
+
+Served by the forecasting service. Statistics are read from the `lot_hourly`
+continuous aggregate, which TimescaleDB keeps up to date from the raw
+`occupancy_readings` hypertable — there is no separate analytics database.
+
 ```
 GET /analytics/summary                  → system-wide statistics
 GET /analytics/lots                     → per-lot statistics
